@@ -1,16 +1,21 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { DEFAULTS, type AppConfig, type GapSource, type GapSpecies, type LifeListSummary, type Scope } from '@gap/shared';
 import * as api from './api.js';
-import { useDebounced } from './hooks.js';
-import { ControlBar } from './components/ControlBar.js';
-import { GapList } from './components/GapList.js';
+import { useDebounced, useTheme } from './hooks.js';
+import { isToday } from './gapDisplay.js';
+import { TopBar } from './components/TopBar.js';
 import { GapMap } from './components/GapMap.js';
-import { LifeListPanel } from './components/LifeListPanel.js';
+import { GapPanel, segmentOf } from './components/GapPanel.js';
+import { LifeListChip } from './components/LifeListChip.js';
+import { UploadOverlay } from './components/UploadOverlay.js';
 
 export function App() {
+  const { choice: themeChoice, mode, setChoice: setThemeChoice } = useTheme();
+
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [summary, setSummary] = useState<LifeListSummary | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [showUpload, setShowUpload] = useState(false);
 
   const [lat, setLat] = useState(0);
   const [lng, setLng] = useState(0);
@@ -83,6 +88,7 @@ export function App() {
       const s = await api.uploadLifeList(file);
       setSummary(s);
       setHasLifeList(true);
+      setShowUpload(false);
       loadGaps();
     } catch (e) {
       setError((e as Error).message);
@@ -97,6 +103,7 @@ export function App() {
     setHasLifeList(false);
     setGaps([]);
     setNearbyCount(0);
+    setShowUpload(false);
   }
 
   function setLatLng(newLat: number, newLng: number) {
@@ -104,94 +111,74 @@ export function App() {
     setLng(newLng);
   }
 
+  function setSegment(s: GapSource, sc: Scope) {
+    setSource(s);
+    setScope(sc);
+  }
+
+  const gapsToday = gaps.filter(isToday).length;
+  // First-run (no list) forces the overlay open and non-dismissable.
+  const overlayOpen = showUpload || (!!config && !hasLifeList);
+
   return (
     <div className="app">
-      <header className="header">
-        <div className="title">
-          <h1>eBird Gap Finder</h1>
-          <p className="subtitle">Species reported near you that aren’t on your list yet.</p>
-        </div>
-        <LifeListPanel summary={summary} uploading={uploading} onUpload={handleUpload} onClear={handleClear} />
-      </header>
+      {config && (
+        <GapMap
+          lat={lat}
+          lng={lng}
+          distKm={distKm}
+          backDays={backDays}
+          gaps={gaps}
+          mode={mode}
+          highlighted={highlighted}
+          onHighlight={setHighlighted}
+          onPickLocation={setLatLng}
+          focusCode={focusCode}
+        />
+      )}
 
       {config && (
-        <ControlBar
+        <TopBar
           config={config}
           lat={lat}
           lng={lng}
           distKm={distKm}
           backDays={backDays}
-          source={source}
-          scope={scope}
+          themeChoice={themeChoice}
           onLatLng={setLatLng}
           onDist={setDistKm}
           onBack={setBackDays}
-          onSource={setSource}
-          onScope={setScope}
+          onTheme={setThemeChoice}
         />
       )}
 
-      {error && <div className="error">⚠ {error}</div>}
+      <GapPanel
+        gaps={gaps}
+        nearbyCount={nearbyCount}
+        backDays={backDays}
+        loading={loading}
+        hasLifeList={hasLifeList}
+        segment={segmentOf(source, scope)}
+        highlighted={highlighted}
+        onSegment={setSegment}
+        onHighlight={setHighlighted}
+        onFocus={(g) => setFocusCode(g.speciesCode)}
+      />
 
-      <main className="split">
-        <section className="list-pane">
-          <div className="list-header">
-            <span>
-              {loading
-                ? 'Finding gaps…'
-                : hasLifeList
-                  ? `${gaps.length} ${gaps.length === 1 ? 'gap' : 'gaps'} · ${nearbyCount} species reported nearby`
-                  : 'Upload your life list to see gaps'}
-            </span>
-          </div>
+      <LifeListChip summary={summary} gapsToday={gapsToday} onClick={() => setShowUpload(true)} />
 
-          {!hasLifeList && !loading && (
-            <div className="empty">
-              <p>Once your life list is loaded, the species being reported nearby that you haven’t
-              logged will show up here.</p>
-            </div>
-          )}
+      {error && <div className="toast-error">⚠ {error}</div>}
 
-          {hasLifeList && !loading && gaps.length === 0 && (
-            <div className="empty">
-              <p>No new species reported nearby in this window.</p>
-              <p className="hint">
-                That’s normal close to home — try a larger radius, a longer lookback, or switch the
-                baseline to “This year”.
-              </p>
-            </div>
-          )}
-
-          <GapList
-            gaps={gaps}
-            highlighted={highlighted}
-            onHighlight={setHighlighted}
-            onFocus={(g) => setFocusCode(g.speciesCode)}
-          />
-        </section>
-
-        <section className="map-pane">
-          {config && (
-            <GapMap
-              lat={lat}
-              lng={lng}
-              distKm={distKm}
-              gaps={gaps}
-              highlighted={highlighted}
-              onHighlight={setHighlighted}
-              onPickLocation={setLatLng}
-              focusCode={focusCode}
-            />
-          )}
-        </section>
-      </main>
-
-      <footer className="footer">
-        <span className="hint">
-          Coordinates from eBird are rounded (~1&nbsp;km), so markers are approximate. Be kind to the
-          API — this uses your own key.
-        </span>
-      </footer>
+      {overlayOpen && (
+        <UploadOverlay
+          summary={summary}
+          uploading={uploading}
+          dismissable={hasLifeList}
+          onUpload={handleUpload}
+          onClear={handleClear}
+          onClose={() => setShowUpload(false)}
+        />
+      )}
     </div>
   );
 }
