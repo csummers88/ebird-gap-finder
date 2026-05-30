@@ -1,0 +1,26 @@
+{
+  "name": "ebird-gap-finder",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Self-hosted, bring-your-own-key birding tool: diff your eBird life list against what's being reported nearby and surface the species you haven't seen yet.",
+  "license": "MIT",
+  "type": "module",
+  "workspaces": [
+    "shared",
+    "server",
+    "web"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "concurrently -n server,web -c blue,green \"npm run dev -w @gap/server\" \"npm run dev -w @gap/web\"",
+    "build": "npm run build -w @gap/web",
+    "start": "npm run start -w @gap/server",
+    "typecheck": "npm run typecheck -w @gap/server && npm run typecheck -w @gap/web",
+    "test": "npm run test -w @gap/server"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  }
+}
