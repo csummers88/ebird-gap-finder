@@ -56,6 +56,7 @@ export const Icons = {
     </Ic>
   ),
   arrow: (p: P) => <Ic {...p} d="M7 17 17 7M9 7h8v8" />,
+  chevron: (p: P) => <Ic {...p} d="m6 9 6 6 6-6" />,
   sliders: (p: P) => (
     <Ic {...p}>
       <path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6" />

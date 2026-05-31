@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { MapContainer, TileLayer, CircleMarker, Circle, useMap, useMapEvents } from 'react-leaflet';
-import type { GapSpecies } from '@gap/shared';
+import { MapContainer, TileLayer, CircleMarker, Circle, Tooltip, useMap, useMapEvents } from 'react-leaflet';
+import type { GapSpecies, RankedHotspot } from '@gap/shared';
+import type { ViewMode } from './GapPanel.js';
 import type { ThemeMode } from '../hooks.js';
 import { Sparkline } from './Sparkline.js';
 import { Icons } from './Icons.js';
@@ -18,11 +19,17 @@ interface Props {
   onHighlight: (code: string | null) => void;
   onPickLocation: (lat: number, lng: number) => void;
   focusCode: string | null;
+  // Trip planner
+  viewMode: ViewMode;
+  hotspots: RankedHotspot[];
+  highlightedHotspot: string | null;
+  onHighlightHotspot: (locId: string | null) => void;
+  focusHotspot: string | null;
 }
 
 const MARKERS = {
-  light: { regular: '#0a6b4a', notable: '#c64a2c', stroke: '#fbf7ee', search: '#0a6b4a', ring: '#0a6b4a' },
-  dark: { regular: '#46b88c', notable: '#e08a5e', stroke: '#16130d', search: '#46b88c', ring: '#46b88c' },
+  light: { regular: '#0a6b4a', notable: '#c64a2c', stroke: '#fbf7ee', search: '#0a6b4a', ring: '#0a6b4a', hotspot: '#d08a2c' },
+  dark: { regular: '#46b88c', notable: '#e08a5e', stroke: '#16130d', search: '#46b88c', ring: '#46b88c', hotspot: '#e0ab5e' },
 } as const;
 
 /** Recenters the map when the search point moves (geolocation, typing, etc.). */
@@ -107,9 +114,67 @@ function HighlightCallout({ gaps, highlighted, backDays }: { gaps: GapSpecies[];
   );
 }
 
+/** When a planner row is clicked, pan to that hotspot. */
+function FlyToHotspot({ hotspots, focusHotspot }: { hotspots: RankedHotspot[]; focusHotspot: string | null }) {
+  const map = useMap();
+  useEffect(() => {
+    if (!focusHotspot) return;
+    const h = hotspots.find((x) => x.locId === focusHotspot);
+    if (h) map.flyTo([h.lat, h.lng], Math.max(map.getZoom(), 12), { duration: 0.6 });
+  }, [focusHotspot, hotspots, map]);
+  return null;
+}
+
+/** Field-guide callout anchored to the highlighted hotspot marker (mirrors HighlightCallout). */
+function HotspotCallout({ hotspots, highlighted }: { hotspots: RankedHotspot[]; highlighted: string | null }) {
+  const map = useMap();
+  const [, force] = useState(0);
+  useMapEvents({
+    move: () => force((n) => n + 1),
+    zoom: () => force((n) => n + 1),
+    resize: () => force((n) => n + 1),
+  });
+
+  const h = highlighted ? hotspots.find((x) => x.locId === highlighted) : undefined;
+  if (!h) return null;
+
+  const pt = map.latLngToContainerPoint([h.lat, h.lng]);
+  const size = map.getSize();
+  const right = pt.x > size.x * 0.55;
+  const top = h.species.slice(0, 5);
+
+  return createPortal(
+    <div className={`callout ${right ? 'left' : 'right'}`} style={{ left: pt.x, top: pt.y }}>
+      <div className="callout-head">
+        <span className="callout-dot" style={{ background: 'var(--warm)' }} />
+        <span className="callout-name">{h.locName}</span>
+      </div>
+      <div className="callout-sci">
+        {h.unseenCount} new {h.unseenCount === 1 ? 'bird' : 'birds'} · {h.distanceKm} km away
+      </div>
+      <div className="callout-hotspot-species">
+        {top.map((s) => (
+          <div key={s.speciesCode} className="callout-line">
+            {s.comName}
+          </div>
+        ))}
+        {h.unseenCount > top.length && (
+          <div className="callout-line muted">+{h.unseenCount - top.length} more</div>
+        )}
+      </div>
+      <a className="callout-link" href={h.ebirdUrl} target="_blank" rel="noreferrer">
+        View hotspot on eBird <Icons.arrow size={13} />
+      </a>
+    </div>,
+    map.getContainer(),
+  );
+}
+
 export function GapMap(props: Props) {
-  const { lat, lng, distKm, backDays, gaps, mode, highlighted } = props;
+  const { lat, lng, distKm, backDays, gaps, mode, highlighted, viewMode, hotspots } = props;
   const c = MARKERS[mode];
+  const planner = viewMode === 'planner';
+  const maxCount = planner ? Math.max(1, ...hotspots.map((h) => h.unseenCount)) : 1;
 
   return (
     <MapContainer center={[lat, lng]} zoom={11} className="map" scrollWheelZoom zoomControl={false}>
@@ -120,6 +185,7 @@ export function GapMap(props: Props) {
       <Recenter lat={lat} lng={lng} />
       <ClickToPick onPick={props.onPickLocation} />
       <FlyToFocus gaps={gaps} focusCode={props.focusCode} />
+      <FlyToHotspot hotspots={hotspots} focusHotspot={props.focusHotspot} />
 
       {/* Search point + radius (coords are eBird-rounded; treat as approximate). */}
       <Circle center={[lat, lng]} radius={distKm * 1000} pathOptions={{ color: c.ring, weight: 1.4, fillColor: c.ring, fillOpacity: 0.06 }} />
@@ -129,32 +195,63 @@ export function GapMap(props: Props) {
         pathOptions={{ color: c.stroke, weight: 2.5, fillColor: c.search, fillOpacity: 1 }}
       />
 
-      {gaps.flatMap((g) =>
-        g.observations.map((o, i) => {
-          const on = highlighted === g.speciesCode;
-          const fill = g.notable ? c.notable : c.regular;
+      {!planner &&
+        gaps.flatMap((g) =>
+          g.observations.map((o, i) => {
+            const on = highlighted === g.speciesCode;
+            const fill = g.notable ? c.notable : c.regular;
+            return (
+              <CircleMarker
+                key={`${g.speciesCode}-${o.locId}-${i}`}
+                center={[o.lat, o.lng]}
+                radius={on ? 8 : 5}
+                pathOptions={{
+                  color: c.stroke,
+                  weight: on ? 2.5 : 2,
+                  fillColor: fill,
+                  fillOpacity: on ? 1 : 0.85,
+                }}
+                eventHandlers={{
+                  mouseover: () => props.onHighlight(g.speciesCode),
+                  mouseout: () => props.onHighlight(null),
+                  click: () => props.onHighlight(g.speciesCode),
+                }}
+              />
+            );
+          }),
+        )}
+
+      {planner &&
+        hotspots.map((h) => {
+          const on = props.highlightedHotspot === h.locId;
+          // Scale marker radius 7→16 by unseen-species count relative to the top hotspot.
+          const radius = 7 + Math.round((h.unseenCount / maxCount) * 9);
           return (
             <CircleMarker
-              key={`${g.speciesCode}-${o.locId}-${i}`}
-              center={[o.lat, o.lng]}
-              radius={on ? 8 : 5}
+              key={h.locId}
+              center={[h.lat, h.lng]}
+              radius={on ? radius + 2 : radius}
               pathOptions={{
                 color: c.stroke,
                 weight: on ? 2.5 : 2,
-                fillColor: fill,
-                fillOpacity: on ? 1 : 0.85,
+                fillColor: c.hotspot,
+                fillOpacity: on ? 1 : 0.82,
               }}
               eventHandlers={{
-                mouseover: () => props.onHighlight(g.speciesCode),
-                mouseout: () => props.onHighlight(null),
-                click: () => props.onHighlight(g.speciesCode),
+                mouseover: () => props.onHighlightHotspot(h.locId),
+                mouseout: () => props.onHighlightHotspot(null),
+                click: () => props.onHighlightHotspot(h.locId),
               }}
-            />
+            >
+              <Tooltip direction="top" offset={[0, -radius]} permanent className="hotspot-tip">
+                {h.unseenCount}
+              </Tooltip>
+            </CircleMarker>
           );
-        }),
-      )}
+        })}
 
-      <HighlightCallout gaps={gaps} highlighted={highlighted} backDays={backDays} />
+      {!planner && <HighlightCallout gaps={gaps} highlighted={highlighted} backDays={backDays} />}
+      {planner && <HotspotCallout hotspots={hotspots} highlighted={props.highlightedHotspot} />}
     </MapContainer>
   );
 }

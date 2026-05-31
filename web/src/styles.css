@@ -469,6 +469,160 @@ input[type='range'] {
   flex-shrink: 0;
 }
 
+/* ------------------------------------------------------ Trip planner ---- */
+.hotspot-list {
+  display: flex;
+  flex-direction: column;
+}
+.hotspot-row {
+  border-bottom: 1px solid var(--border);
+}
+.hotspot-row.on {
+  background: var(--accent-soft);
+  border-radius: 12px;
+  border-bottom-color: transparent;
+}
+.hotspot-head {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 13px 4px;
+  cursor: pointer;
+  transition: padding 0.14s;
+}
+.hotspot-row.on .hotspot-head {
+  padding: 13px 12px;
+}
+.hotspot-rank {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--warm);
+  color: var(--accent-text);
+  font-family: var(--sans);
+  font-weight: 800;
+  font-size: 12px;
+}
+.hotspot-main {
+  flex: 1;
+  min-width: 0;
+}
+.hotspot-name {
+  font-family: var(--serif);
+  font-weight: 600;
+  font-size: 16px;
+  color: var(--text);
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hotspot-meta {
+  display: flex;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--muted);
+  margin-top: 3px;
+  font-family: var(--sans);
+}
+.hotspot-count {
+  font-weight: 700;
+  color: var(--warm);
+}
+.hotspot-chevron {
+  flex-shrink: 0;
+  color: var(--muted);
+  transition: transform 0.18s;
+}
+.hotspot-chevron.open {
+  transform: rotate(180deg);
+}
+.hotspot-species {
+  list-style: none;
+  margin: 0;
+  padding: 0 4px 10px 40px;
+}
+.hotspot-species-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 5px 0;
+}
+.hotspot-species-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+}
+.hotspot-species-name {
+  font-family: var(--serif);
+  font-size: 14px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hotspot-species-sci {
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 11.5px;
+  color: var(--faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hotspot-species-day {
+  font-size: 11px;
+  color: var(--muted);
+  font-family: var(--sans);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.hotspot-species-link {
+  color: var(--muted);
+  display: inline-flex;
+  flex-shrink: 0;
+}
+.hotspot-species-link:hover {
+  color: var(--accent);
+}
+.hotspot-footnote {
+  margin: 14px 4px 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+  font-family: var(--sans);
+}
+
+/* Hotspot marker count label on the map — a compact pill so it reads over tiles. */
+.hotspot-tip.leaflet-tooltip {
+  background: var(--warm);
+  border: 1.5px solid var(--panel-solid);
+  box-shadow: var(--shadow);
+  padding: 0 5px;
+  border-radius: 999px;
+  color: #fff;
+  font-family: var(--sans);
+  font-weight: 800;
+  font-size: 10.5px;
+  line-height: 1.5;
+  pointer-events: none;
+}
+.hotspot-tip.leaflet-tooltip::before {
+  display: none;
+}
+
+.callout-hotspot-species {
+  margin: 8px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
 /* ----------------------------------------------------- Map callout ---- */
 .callout {
   position: absolute;

@@ -1,4 +1,10 @@
-import type { AppConfig, GapsResponse, GapQuery, LifeListSummary } from '@gap/shared';
+import type {
+  AppConfig,
+  GapsResponse,
+  GapQuery,
+  LifeListSummary,
+  TripPlannerResponse,
+} from '@gap/shared';
 
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) {
@@ -45,4 +51,15 @@ export async function getGaps(q: GapQuery, signal?: AbortSignal): Promise<GapsRe
     scope: q.scope,
   });
   return json<GapsResponse>(await fetch(`/api/gaps?${params}`, { signal }));
+}
+
+export async function getTripPlan(q: GapQuery, signal?: AbortSignal): Promise<TripPlannerResponse> {
+  const params = new URLSearchParams({
+    lat: String(q.lat),
+    lng: String(q.lng),
+    distKm: String(q.distKm),
+    backDays: String(q.backDays),
+    scope: q.scope,
+  });
+  return json<TripPlannerResponse>(await fetch(`/api/trip-planner?${params}`, { signal }));
 }

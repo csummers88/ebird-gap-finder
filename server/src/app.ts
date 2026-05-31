@@ -7,17 +7,28 @@ import {
   type GapSource,
   type GapsResponse,
   type Scope,
+  type TripPlannerResponse,
 } from '@gap/shared';
 import { config } from './config.js';
-import { clampBack, clampDist, ebird, EbirdError, type RawObservation } from './ebird/client.js';
+import {
+  clampBack,
+  clampDist,
+  ebird,
+  EbirdError,
+  type RawHotspot,
+  type RawObservation,
+} from './ebird/client.js';
 import { getTaxonomy } from './species/taxonomy.js';
 import { parseLifeList } from './csv/parse.js';
 import { createStore } from './store/index.js';
 import { TtlCache } from './gaps/cache.js';
 import { computeGaps, seenSet } from './gaps/compute.js';
+import { rankHotspots } from './trip/plan.js';
 
 const store = createStore();
 const obsCache = new TtlCache<RawObservation[]>(config.obsCacheTtlSeconds * 1000);
+// Hotspots change rarely; reuse the same TTL as observations.
+const hotspotCache = new TtlCache<RawHotspot[]>(config.obsCacheTtlSeconds * 1000);
 
 // 80 MB covers a very heavy birder's export with headroom.
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 80 * 1024 * 1024 } });
@@ -49,6 +60,16 @@ async function fetchObservations(
       : await ebird.recentNearby(lat, lng, distKm, backDays);
   obsCache.set(key, obs);
   return { obs, cached: false };
+}
+
+/** Fetch nearby hotspots for the trip planner, cached by rounded location + radius. */
+async function fetchHotspots(lat: number, lng: number, distKm: number): Promise<RawHotspot[]> {
+  const key = `${roundCoord(lat)}:${roundCoord(lng)}:${distKm}`;
+  const hit = hotspotCache.get(key);
+  if (hit) return hit;
+  const hotspots = await ebird.hotspotsNearby(lat, lng, distKm);
+  hotspotCache.set(key, hotspots);
+  return hotspots;
 }
 
 export function createApp() {
@@ -139,6 +160,63 @@ export function createApp() {
         query,
         nearbySpeciesCount,
         gaps,
+        cached,
+      };
+      res.json(body);
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // ---- Trip planner: nearby hotspots ranked by how many unseen species you could add. ----
+  api.get('/trip-planner', async (req, res, next) => {
+    try {
+      const lat = asNumber(req.query.lat, config.defaultLat);
+      const lng = asNumber(req.query.lng, config.defaultLng);
+      const distKm = clampDist(asNumber(req.query.distKm, DEFAULTS.DIST_KM));
+      const backDays = clampBack(asNumber(req.query.backDays, DEFAULTS.BACK_DAYS));
+      const scope: Scope =
+        req.query.scope === 'year' ? 'year' : req.query.scope === 'county' ? 'county' : 'life';
+      // The planner ranks regular nearby species; force `recent` so it shares the
+      // observation cache with the gap view (and never the sparse rarities feed).
+      const source: GapSource = 'recent';
+      const query = { lat, lng, distKm, backDays, source, scope };
+
+      const list = store.get();
+      if (!list) {
+        const empty: TripPlannerResponse = {
+          hasLifeList: false,
+          query,
+          hotspots: [],
+          unattributedSpeciesCount: 0,
+          cached: false,
+        };
+        return res.json(empty);
+      }
+
+      const taxonomy = await getTaxonomy();
+      const [{ obs, cached }, hotspots] = await Promise.all([
+        fetchObservations(source, lat, lng, distKm, backDays),
+        fetchHotspots(lat, lng, distKm),
+      ]);
+      const currentYear = new Date().getFullYear();
+      const seen = seenSet(list, scope, currentYear);
+      const { gaps } = computeGaps(obs, seen, taxonomy, { lat, lng }, false);
+      const { hotspots: ranked, unattributedSpeciesCount } = rankHotspots(gaps, hotspots, { lat, lng });
+
+      if (unattributedSpeciesCount > 0) {
+        // Honest note: the eBird feed gives one most-recent report per species, so
+        // some gaps can't be placed at a nearby hotspot. Surfaced, not hidden.
+        console.info(
+          `trip-planner: ${ranked.length} hotspots ranked, ${unattributedSpeciesCount} unseen species not at a nearby hotspot`,
+        );
+      }
+
+      const body: TripPlannerResponse = {
+        hasLifeList: true,
+        query,
+        hotspots: ranked,
+        unattributedSpeciesCount,
         cached,
       };
       res.json(body);

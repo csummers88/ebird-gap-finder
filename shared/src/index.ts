@@ -114,6 +114,49 @@ export interface GapsResponse {
   cached: boolean;
 }
 
+// ---- Trip planner: nearby hotspots ranked by how many unseen species you could add. ----
+export interface RankedHotspotSpecies {
+  speciesCode: string;
+  comName: string;
+  sciName: string;
+  /** ISO-ish datetime of the most recent report of this species at this hotspot. */
+  lastObsDt: string;
+  ebirdUrl: string;
+}
+
+export interface RankedHotspot {
+  locId: string;
+  locName: string;
+  lat: number;
+  lng: number;
+  /** Distance in km from the search point to the hotspot. */
+  distanceKm: number;
+  /** Number of distinct unseen species attributed to this hotspot. */
+  unseenCount: number;
+  /** The unseen species, most-recent first. */
+  species: RankedHotspotSpecies[];
+  /** Link out to the eBird hotspot page. */
+  ebirdUrl: string;
+}
+
+export interface TripPlannerResponse {
+  /** Whether a life list is loaded. If false, `hotspots` is empty and the UI prompts upload. */
+  hasLifeList: boolean;
+  /** Echo of the (clamped) query actually used. */
+  query: GapQuery;
+  /** Nearby hotspots, ranked by distinct unseen species (most first). */
+  hotspots: RankedHotspot[];
+  /**
+   * Unseen species whose most-recent nearby report wasn't at a known hotspot
+   * (a personal location, or a hotspot outside the searched radius). The eBird
+   * feed gives only the single most-recent report per species, so this is an
+   * honest count of what the ranking can't place — surfaced, not hidden.
+   */
+  unattributedSpeciesCount: number;
+  /** Whether the underlying observations were served from cache. */
+  cached: boolean;
+}
+
 export interface ApiError {
   error: string;
 }

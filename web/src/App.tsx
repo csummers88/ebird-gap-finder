@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { DEFAULTS, type AppConfig, type GapSource, type GapSpecies, type LifeListSummary, type Scope } from '@gap/shared';
+import { DEFAULTS, type AppConfig, type GapSource, type GapSpecies, type LifeListSummary, type RankedHotspot, type Scope } from '@gap/shared';
 import * as api from './api.js';
 import { useDebounced, useTheme } from './hooks.js';
 import { isToday } from './gapDisplay.js';
 import { TopBar } from './components/TopBar.js';
 import { GapMap } from './components/GapMap.js';
-import { GapPanel, segmentOf } from './components/GapPanel.js';
+import { GapPanel, segmentOf, type ViewMode } from './components/GapPanel.js';
 import { LifeListChip } from './components/LifeListChip.js';
 import { UploadOverlay } from './components/UploadOverlay.js';
 
@@ -23,6 +23,7 @@ export function App() {
   const [backDays, setBackDays] = useState<number>(DEFAULTS.BACK_DAYS);
   const [source, setSource] = useState<GapSource>('recent');
   const [scope, setScope] = useState<Scope>('life');
+  const [viewMode, setViewMode] = useState<ViewMode>('gaps');
 
   const [gaps, setGaps] = useState<GapSpecies[]>([]);
   const [nearbyCount, setNearbyCount] = useState(0);
@@ -32,6 +33,12 @@ export function App() {
 
   const [highlighted, setHighlighted] = useState<string | null>(null);
   const [focusCode, setFocusCode] = useState<string | null>(null);
+
+  // Trip planner
+  const [plan, setPlan] = useState<RankedHotspot[]>([]);
+  const [unattributed, setUnattributed] = useState(0);
+  const [highlightedHotspot, setHighlightedHotspot] = useState<string | null>(null);
+  const [focusHotspot, setFocusHotspot] = useState<string | null>(null);
 
   // ---- Initial load: config + any persisted life list. ----
   useEffect(() => {
@@ -77,9 +84,30 @@ export function App() {
       .finally(() => setLoading(false));
   }, [config, dLat, dLng, dDist, dBack, source, scope]);
 
+  const loadPlan = useCallback(() => {
+    if (!config) return;
+    abortRef.current?.abort();
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+    setLoading(true);
+    setError(null);
+    api
+      .getTripPlan({ lat: dLat, lng: dLng, distKm: dDist, backDays: dBack, source: 'recent', scope }, ctrl.signal)
+      .then((res) => {
+        setHasLifeList(res.hasLifeList);
+        setPlan(res.hotspots);
+        setUnattributed(res.unattributedSpeciesCount);
+      })
+      .catch((e) => {
+        if ((e as Error).name !== 'AbortError') setError((e as Error).message);
+      })
+      .finally(() => setLoading(false));
+  }, [config, dLat, dLng, dDist, dBack, scope]);
+
   useEffect(() => {
-    loadGaps();
-  }, [loadGaps]);
+    if (viewMode === 'planner') loadPlan();
+    else loadGaps();
+  }, [viewMode, loadGaps, loadPlan]);
 
   async function handleUpload(file: File) {
     setUploading(true);
@@ -89,7 +117,8 @@ export function App() {
       setSummary(s);
       setHasLifeList(true);
       setShowUpload(false);
-      loadGaps();
+      if (viewMode === 'planner') loadPlan();
+      else loadGaps();
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -103,6 +132,8 @@ export function App() {
     setHasLifeList(false);
     setGaps([]);
     setNearbyCount(0);
+    setPlan([]);
+    setUnattributed(0);
     setShowUpload(false);
   }
 
@@ -111,7 +142,8 @@ export function App() {
     setLng(newLng);
   }
 
-  function setSegment(s: GapSource, sc: Scope) {
+  function selectSegment(mode: ViewMode, s: GapSource, sc: Scope) {
+    setViewMode(mode);
     setSource(s);
     setScope(sc);
   }
@@ -134,6 +166,11 @@ export function App() {
           onHighlight={setHighlighted}
           onPickLocation={setLatLng}
           focusCode={focusCode}
+          viewMode={viewMode}
+          hotspots={plan}
+          highlightedHotspot={highlightedHotspot}
+          onHighlightHotspot={setHighlightedHotspot}
+          focusHotspot={focusHotspot}
         />
       )}
 
@@ -153,16 +190,22 @@ export function App() {
       )}
 
       <GapPanel
+        viewMode={viewMode}
         gaps={gaps}
         nearbyCount={nearbyCount}
         backDays={backDays}
         loading={loading}
         hasLifeList={hasLifeList}
-        segment={segmentOf(source, scope)}
+        segment={viewMode === 'planner' ? 'planner' : segmentOf(source, scope)}
         highlighted={highlighted}
-        onSegment={setSegment}
+        hotspots={plan}
+        unattributed={unattributed}
+        highlightedHotspot={highlightedHotspot}
+        onSelectSegment={selectSegment}
         onHighlight={setHighlighted}
         onFocus={(g) => setFocusCode(g.speciesCode)}
+        onHighlightHotspot={setHighlightedHotspot}
+        onFocusHotspot={(h) => setFocusHotspot(h.locId)}
       />
 
       <LifeListChip summary={summary} gapsToday={gapsToday} onClick={() => setShowUpload(true)} />
