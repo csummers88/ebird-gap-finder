@@ -20,6 +20,13 @@ interface Props {
   onHighlight: (code: string | null) => void;
   selected: string | null;
   onSelect: (code: string | null) => void;
+  /** True while the pinned species' full report set is loading (one lazy eBird call). */
+  enriching: boolean;
+  /** Hovered location (locId) in the species-detail view — pops its marker. */
+  highlightedLoc: string | null;
+  onHighlightLoc: (locId: string | null) => void;
+  /** Fly the map to a specific reported location; `n` re-triggers on repeat clicks. */
+  focusLoc: { lat: number; lng: number; n: number } | null;
   onPickLocation: (lat: number, lng: number) => void;
   focusCode: string | null;
   // Trip planner
@@ -31,8 +38,8 @@ interface Props {
 }
 
 const MARKERS = {
-  light: { regular: '#0a6b4a', notable: '#c64a2c', stroke: '#fbf7ee', search: '#0a6b4a', ring: '#0a6b4a', hotspot: '#d08a2c' },
-  dark: { regular: '#46b88c', notable: '#e08a5e', stroke: '#16130d', search: '#46b88c', ring: '#46b88c', hotspot: '#e0ab5e' },
+  light: { regular: '#0a6b4a', notable: '#c64a2c', stroke: '#fbf7ee', search: '#0a6b4a', ring: '#0a6b4a', hotspot: '#d08a2c', dim: '#b3a98f' },
+  dark: { regular: '#46b88c', notable: '#e08a5e', stroke: '#16130d', search: '#46b88c', ring: '#46b88c', hotspot: '#e0ab5e', dim: '#5c5648' },
 } as const;
 
 /** Recenters the map when the search point moves (geolocation, typing, etc.). */
@@ -65,6 +72,16 @@ function FlyToFocus({ gaps, focusCode }: { gaps: GapSpecies[]; focusCode: string
   return null;
 }
 
+/** Flies to a specific reported location when the user clicks it in the detail list. */
+function FlyToLoc({ focusLoc }: { focusLoc: { lat: number; lng: number; n: number } | null }) {
+  const map = useMap();
+  useEffect(() => {
+    if (!focusLoc) return;
+    map.flyTo([focusLoc.lat, focusLoc.lng], Math.max(map.getZoom(), 13), { duration: 0.6 });
+  }, [focusLoc, map]);
+  return null;
+}
+
 /**
  * Field-guide callout anchored to a species' nearest marker. Shows the hovered
  * species, or — when nothing is hovered — the species pinned by a marker click.
@@ -76,12 +93,14 @@ function HighlightCallout({
   highlighted,
   selected,
   backDays,
+  enriching,
   onClose,
 }: {
   gaps: GapSpecies[];
   highlighted: string | null;
   selected: string | null;
   backDays: number;
+  enriching: boolean;
   onClose: () => void;
 }) {
   const map = useMap();
@@ -125,7 +144,8 @@ function HighlightCallout({
       <div className="callout-body">
         <div>
           <div className="callout-line">
-            <b style={{ color: heat === 'hot' ? color : undefined }}>{relativeDay(g.lastObsDt)}</b> · {g.reportCount} reports
+            <b style={{ color: heat === 'hot' ? color : undefined }}>{relativeDay(g.lastObsDt)}</b> ·{' '}
+            {pinned && enriching ? 'loading reports…' : `${g.reportCount} reports`}
           </div>
           <div className="callout-line muted">
             {g.nearestKm} km — {g.nearestLocName}
@@ -203,6 +223,13 @@ export function GapMap(props: Props) {
   const planner = viewMode === 'planner';
   const maxCount = planner ? Math.max(1, ...hotspots.map((h) => h.unseenCount)) : 1;
 
+  // When a species is pinned, draw it last so its (popped) markers sit above the
+  // dimmed others rather than under them.
+  const sel = props.selected;
+  const orderedGaps = sel
+    ? [...gaps.filter((g) => g.speciesCode !== sel), ...gaps.filter((g) => g.speciesCode === sel)]
+    : gaps;
+
   return (
     <MapContainer center={[lat, lng]} zoom={11} className="map" scrollWheelZoom zoomControl={false}>
       <TileLayer
@@ -212,6 +239,7 @@ export function GapMap(props: Props) {
       <Recenter lat={lat} lng={lng} />
       <ClickToPick onPick={props.onPickLocation} />
       <FlyToFocus gaps={gaps} focusCode={props.focusCode} />
+      <FlyToLoc focusLoc={props.focusLoc} />
       <FlyToHotspot hotspots={hotspots} focusHotspot={props.focusHotspot} />
 
       {/* Search point + radius (coords are eBird-rounded; treat as approximate). */}
@@ -223,26 +251,33 @@ export function GapMap(props: Props) {
       />
 
       {!planner &&
-        gaps.flatMap((g) =>
+        orderedGaps.flatMap((g) =>
           g.observations.map((o, i) => {
-            const on = highlighted === g.speciesCode || props.selected === g.speciesCode;
-            const fill = g.notable ? c.notable : c.regular;
+            const isSel = sel === g.speciesCode;
+            // With a species pinned, fade everything else so its locations read clearly.
+            const dimmed = !!sel && !isSel;
+            const hovered = !sel && highlighted === g.speciesCode;
+            const locOn = isSel && props.highlightedLoc === o.locId;
+            const fill = dimmed ? c.dim : g.notable ? c.notable : c.regular;
+            const radius = locOn ? 10 : isSel ? 7 : hovered ? 8 : 5;
             return (
               <CircleMarker
                 key={`${g.speciesCode}-${o.locId}-${i}`}
                 center={[o.lat, o.lng]}
-                radius={on ? 8 : 5}
+                radius={radius}
                 pathOptions={{
                   color: c.stroke,
-                  weight: on ? 2.5 : 2,
+                  weight: dimmed ? 1 : locOn ? 3 : isSel ? 2.5 : 2,
                   fillColor: fill,
-                  fillOpacity: on ? 1 : 0.85,
+                  fillOpacity: dimmed ? 0.22 : isSel ? 1 : 0.85,
                 }}
                 eventHandlers={{
-                  mouseover: () => props.onHighlight(g.speciesCode),
-                  mouseout: () => props.onHighlight(null),
-                  // Pin this species: keep the callout open + reveal it in the list,
-                  // and don't let the click fall through to the map (which would relocate).
+                  // For the pinned species, hovering a marker syncs the detail list;
+                  // otherwise it previews that species in the transient callout.
+                  mouseover: () => (isSel ? props.onHighlightLoc(o.locId) : props.onHighlight(g.speciesCode)),
+                  mouseout: () => (isSel ? props.onHighlightLoc(null) : props.onHighlight(null)),
+                  // Pin this species: open its detail view + reveal it in the list, and
+                  // don't let the click fall through to the map (which would relocate).
                   click: (e) => {
                     L.DomEvent.stopPropagation(e);
                     props.onSelect(g.speciesCode);
@@ -288,6 +323,7 @@ export function GapMap(props: Props) {
           highlighted={highlighted}
           selected={props.selected}
           backDays={backDays}
+          enriching={props.enriching}
           onClose={() => props.onSelect(null)}
         />
       )}

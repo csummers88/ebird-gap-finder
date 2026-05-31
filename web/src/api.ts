@@ -1,5 +1,6 @@
 import type {
   AppConfig,
+  GapReports,
   GapsResponse,
   GapQuery,
   LifeListSummary,
@@ -51,6 +52,23 @@ export async function getGaps(q: GapQuery, signal?: AbortSignal): Promise<GapsRe
     scope: q.scope,
   });
   return json<GapsResponse>(await fetch(`/api/gaps?${params}`, { signal }));
+}
+
+/** All recent reports for one species — fetched lazily when a gap is pinned. */
+export async function getGapReports(
+  speciesCode: string,
+  q: GapQuery,
+  signal?: AbortSignal,
+): Promise<GapReports> {
+  const params = new URLSearchParams({
+    lat: String(q.lat),
+    lng: String(q.lng),
+    distKm: String(q.distKm),
+    backDays: String(q.backDays),
+  });
+  return json<GapReports>(
+    await fetch(`/api/gaps/${encodeURIComponent(speciesCode)}/reports?${params}`, { signal }),
+  );
 }
 
 export async function getTripPlan(q: GapQuery, signal?: AbortSignal): Promise<TripPlannerResponse> {

@@ -92,6 +92,21 @@ export interface GapSpecies {
   ebirdUrl: string;
 }
 
+// ---- Lazily-loaded full report set for a single gap (one extra eBird call). ----
+// The gap list/map run on eBird's one-most-recent-report-per-species feed; when a
+// user pins a gap we fetch all of that species' recent nearby reports and merge
+// these fields back onto the GapSpecies. Same shape the cheap path produces.
+export interface GapReports {
+  speciesCode: string;
+  observations: GapObservation[];
+  reportCount: number;
+  lastObsDt: string;
+  nearestLocName: string;
+  nearestLat: number;
+  nearestLng: number;
+  nearestKm: number;
+}
+
 export interface GapQuery {
   lat: number;
   lng: number;

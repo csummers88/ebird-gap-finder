@@ -9,11 +9,11 @@ interface Props {
   highlighted: string | null;
   selected: string | null;
   onHighlight: (code: string | null) => void;
-  onFocus: (g: GapSpecies) => void;
+  onSelect: (g: GapSpecies) => void;
 }
 
 /** The scrollable warm field-guide species rows inside the floating panel. */
-export function GapList({ gaps, backDays, highlighted, selected, onHighlight, onFocus }: Props) {
+export function GapList({ gaps, backDays, highlighted, selected, onHighlight, onSelect }: Props) {
   const rows = useRef<Map<string, HTMLDivElement>>(new Map());
 
   // When a species is picked on the map, reveal its row in the (possibly scrolled) list.
@@ -39,7 +39,7 @@ export function GapList({ gaps, backDays, highlighted, selected, onHighlight, on
             className={`gap-row ${on ? 'on' : ''}`}
             onMouseEnter={() => onHighlight(g.speciesCode)}
             onMouseLeave={() => onHighlight(null)}
-            onClick={() => onFocus(g)}
+            onClick={() => onSelect(g)}
           >
             <span
               className={`gap-dot ${heat === 'hot' ? 'hot' : ''}`}

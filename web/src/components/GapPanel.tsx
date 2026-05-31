@@ -1,5 +1,6 @@
 import type { GapSource, GapSpecies, RankedHotspot, Scope } from '@gap/shared';
 import { GapList } from './GapList.js';
+import { SpeciesDetail } from './SpeciesDetail.js';
 import { TripPlannerList } from './TripPlannerList.js';
 
 export type ViewMode = 'gaps' | 'planner';
@@ -22,19 +23,27 @@ interface Props {
   viewMode: ViewMode;
   gaps: GapSpecies[];
   nearbyCount: number;
+  lat: number;
+  lng: number;
   backDays: number;
   loading: boolean;
   hasLifeList: boolean;
   segment: Segment;
   highlighted: string | null;
   selected: string | null;
+  /** True while the selected species' full report set is loading. */
+  enriching: boolean;
+  highlightedLoc: string | null;
   // Trip planner
   hotspots: RankedHotspot[];
   unattributed: number;
   highlightedHotspot: string | null;
   onSelectSegment: (mode: ViewMode, source: GapSource, scope: Scope) => void;
   onHighlight: (code: string | null) => void;
-  onFocus: (g: GapSpecies) => void;
+  onSelect: (g: GapSpecies) => void;
+  onBack: () => void;
+  onHighlightLoc: (locId: string | null) => void;
+  onFocusLoc: (lat: number, lng: number) => void;
   onHighlightHotspot: (locId: string | null) => void;
   onFocusHotspot: (h: RankedHotspot) => void;
 }
@@ -43,6 +52,23 @@ interface Props {
 export function GapPanel(props: Props) {
   const { viewMode, gaps, nearbyCount, backDays, loading, hasLifeList, segment, highlighted, selected } = props;
   const planner = viewMode === 'planner';
+
+  // A pinned species takes over the whole panel with its per-location breakdown.
+  const detailGap = !planner && selected ? gaps.find((g) => g.speciesCode === selected) : undefined;
+  if (detailGap) {
+    return (
+      <SpeciesDetail
+        gap={detailGap}
+        origin={{ lat: props.lat, lng: props.lng }}
+        backDays={backDays}
+        enriching={props.enriching}
+        highlightedLoc={props.highlightedLoc}
+        onBack={props.onBack}
+        onHighlightLoc={props.onHighlightLoc}
+        onFocusLoc={props.onFocusLoc}
+      />
+    );
+  }
 
   const headCount = planner
     ? loading
@@ -136,7 +162,7 @@ export function GapPanel(props: Props) {
             highlighted={highlighted}
             selected={selected}
             onHighlight={props.onHighlight}
-            onFocus={props.onFocus}
+            onSelect={props.onSelect}
           />
         )}
       </div>

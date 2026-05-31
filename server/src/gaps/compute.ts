@@ -33,6 +33,61 @@ export interface ComputeResult {
   nearbySpeciesCount: number;
 }
 
+/** Per-species display + map summary derived from a set of raw observations. */
+export interface ObsSummary {
+  lastObsDt: string;
+  reportCount: number;
+  nearestLocName: string;
+  nearestLat: number;
+  nearestLng: number;
+  nearestKm: number;
+  observations: GapObservation[];
+}
+
+/**
+ * Collapse a species' raw observations into the fields a GapSpecies needs:
+ * the most recent date, the nearest report to `origin`, and every report as a
+ * map marker. Shared by the gap diff and the lazy "all reports" endpoint so both
+ * produce identical shapes. `obsList` must be non-empty.
+ */
+export function summarizeObservations(
+  obsList: RawObservation[],
+  origin: { lat: number; lng: number },
+): ObsSummary {
+  const first = obsList[0]!;
+  let nearest = first;
+  let nearestKm = haversineKm(origin.lat, origin.lng, first.lat, first.lng);
+  let lastObsDt = first.obsDt;
+
+  for (const o of obsList) {
+    const km = haversineKm(origin.lat, origin.lng, o.lat, o.lng);
+    if (km < nearestKm) {
+      nearestKm = km;
+      nearest = o;
+    }
+    if (o.obsDt > lastObsDt) lastObsDt = o.obsDt;
+  }
+
+  const observations: GapObservation[] = obsList.map((o) => ({
+    locId: o.locId,
+    locName: o.locName,
+    lat: o.lat,
+    lng: o.lng,
+    obsDt: o.obsDt,
+    howMany: typeof o.howMany === 'number' ? o.howMany : null,
+  }));
+
+  return {
+    lastObsDt,
+    reportCount: obsList.length,
+    nearestLocName: nearest.locName,
+    nearestLat: nearest.lat,
+    nearestLng: nearest.lng,
+    nearestKm: Math.round(nearestKm * 10) / 10,
+    observations,
+  };
+}
+
 /**
  * The core diff. Resolve every observation to a species code, group by species,
  * subtract the seen set, and shape each remaining species into a GapSpecies with
@@ -63,42 +118,15 @@ export function computeGaps(
 
     const info = taxonomy.getSpeciesInfo(code);
     const first = obsList[0]!;
-
-    let nearest = first;
-    let nearestKm = haversineKm(origin.lat, origin.lng, first.lat, first.lng);
-    let lastObsDt = first.obsDt;
-
-    for (const o of obsList) {
-      const km = haversineKm(origin.lat, origin.lng, o.lat, o.lng);
-      if (km < nearestKm) {
-        nearestKm = km;
-        nearest = o;
-      }
-      if (o.obsDt > lastObsDt) lastObsDt = o.obsDt;
-    }
-
-    const observationsOut: GapObservation[] = obsList.map((o) => ({
-      locId: o.locId,
-      locName: o.locName,
-      lat: o.lat,
-      lng: o.lng,
-      obsDt: o.obsDt,
-      howMany: typeof o.howMany === 'number' ? o.howMany : null,
-    }));
+    const summary = summarizeObservations(obsList, origin);
 
     gaps.push({
       speciesCode: code,
       comName: info?.comName ?? first.comName,
       sciName: info?.sciName ?? first.sciName,
-      lastObsDt,
-      reportCount: obsList.length,
-      nearestLocName: nearest.locName,
-      nearestLat: nearest.lat,
-      nearestLng: nearest.lng,
-      nearestKm: Math.round(nearestKm * 10) / 10,
       notable,
-      observations: observationsOut,
       ebirdUrl: `https://ebird.org/species/${code}`,
+      ...summary,
     });
   }
 

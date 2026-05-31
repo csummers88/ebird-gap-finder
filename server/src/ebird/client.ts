@@ -112,6 +112,29 @@ export const ebird = {
     });
   },
 
+  /**
+   * All recent nearby reports of a single species (nearest first), within `dist` km
+   * over the last `back` days. Unlike `recentNearby` (one most-recent report per
+   * species), this returns a report per reporting location — the data behind a
+   * pinned gap's full sighting history. One call per species, so fetch lazily.
+   */
+  async nearbyObsOfSpecies(
+    speciesCode: string,
+    lat: number,
+    lng: number,
+    distKm: number,
+    backDays: number,
+  ): Promise<RawObservation[]> {
+    return get<RawObservation[]>(`/data/nearest/geo/recent/${speciesCode}`, {
+      lat,
+      lng,
+      dist: clampDist(distKm),
+      back: clampBack(backDays),
+      // Plenty for a single species in a ≤50 km radius; bounds the payload.
+      maxResults: 200,
+    });
+  },
+
   /** Hotspots near a point (for the trip planner). CSV by default — request JSON. */
   async hotspotsNearby(lat: number, lng: number, distKm: number): Promise<RawHotspot[]> {
     return get<RawHotspot[]>('/ref/hotspot/geo', {

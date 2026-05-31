@@ -5,6 +5,7 @@ import {
   LIMITS,
   type AppConfig,
   type GapSource,
+  type GapReports,
   type GapsResponse,
   type Scope,
   type TripPlannerResponse,
@@ -22,13 +23,15 @@ import { getTaxonomy } from './species/taxonomy.js';
 import { parseLifeList } from './csv/parse.js';
 import { createStore } from './store/index.js';
 import { TtlCache } from './gaps/cache.js';
-import { computeGaps, seenSet } from './gaps/compute.js';
+import { computeGaps, haversineKm, seenSet, summarizeObservations } from './gaps/compute.js';
 import { rankHotspots } from './trip/plan.js';
 
 const store = createStore();
 const obsCache = new TtlCache<RawObservation[]>(config.obsCacheTtlSeconds * 1000);
 // Hotspots change rarely; reuse the same TTL as observations.
 const hotspotCache = new TtlCache<RawHotspot[]>(config.obsCacheTtlSeconds * 1000);
+// All recent reports for a single pinned species; keyed by species + rounded query.
+const speciesObsCache = new TtlCache<RawObservation[]>(config.obsCacheTtlSeconds * 1000);
 
 // 80 MB covers a very heavy birder's export with headroom.
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 80 * 1024 * 1024 } });
@@ -59,6 +62,22 @@ async function fetchObservations(
       ? await ebird.notableNearby(lat, lng, distKm, backDays)
       : await ebird.recentNearby(lat, lng, distKm, backDays);
   obsCache.set(key, obs);
+  return { obs, cached: false };
+}
+
+/** Fetch all recent reports of one species near a point, cached by species + rounded params. */
+async function fetchSpeciesObs(
+  speciesCode: string,
+  lat: number,
+  lng: number,
+  distKm: number,
+  backDays: number,
+): Promise<{ obs: RawObservation[]; cached: boolean }> {
+  const key = `${speciesCode}:${roundCoord(lat)}:${roundCoord(lng)}:${distKm}:${backDays}`;
+  const hit = speciesObsCache.get(key);
+  if (hit) return { obs: hit, cached: true };
+  const obs = await ebird.nearbyObsOfSpecies(speciesCode, lat, lng, distKm, backDays);
+  speciesObsCache.set(key, obs);
   return { obs, cached: false };
 }
 
@@ -162,6 +181,45 @@ export function createApp() {
         gaps,
         cached,
       };
+      res.json(body);
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // ---- All recent reports for one pinned species (one lazy eBird call per gap). ----
+  api.get('/gaps/:speciesCode/reports', async (req, res, next) => {
+    try {
+      // eBird species codes are lowercase-alphanumeric (e.g. "amerob", "rethaw1").
+      const speciesCode = String(req.params.speciesCode);
+      if (!/^[a-z0-9]{4,12}$/.test(speciesCode)) {
+        return res.status(400).json({ error: 'Invalid species code.' });
+      }
+      const lat = asNumber(req.query.lat, config.defaultLat);
+      const lng = asNumber(req.query.lng, config.defaultLng);
+      const distKm = clampDist(asNumber(req.query.distKm, DEFAULTS.DIST_KM));
+      const backDays = clampBack(asNumber(req.query.backDays, DEFAULTS.BACK_DAYS));
+      const origin = { lat, lng };
+
+      const { obs } = await fetchSpeciesObs(speciesCode, lat, lng, distKm, backDays);
+      // The nearest-obs feed sorts by distance but isn't strictly bounded by `dist`;
+      // clamp to the searched radius so reports never fall outside the map circle.
+      const inRadius = obs.filter((o) => haversineKm(lat, lng, o.lat, o.lng) <= distKm);
+
+      // No reports in range is a normal state (the cheap feed's single report may sit
+      // just outside, or it's since aged out) — return an empty set, not an error.
+      const body: GapReports = inRadius.length
+        ? { speciesCode, ...summarizeObservations(inRadius, origin) }
+        : {
+            speciesCode,
+            observations: [],
+            reportCount: 0,
+            lastObsDt: '',
+            nearestLocName: '',
+            nearestLat: lat,
+            nearestLng: lng,
+            nearestKm: 0,
+          };
       res.json(body);
     } catch (err) {
       next(err);
