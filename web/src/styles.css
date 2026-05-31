@@ -634,6 +634,28 @@ input[type='range'] {
 .callout.left {
   transform: translate(calc(-100% - 16px), -50%);
 }
+/* A click-pinned callout stays put and is fully interactive (link + close reachable). */
+.callout.pinned {
+  pointer-events: auto;
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+.callout-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: -4px -4px -4px 0;
+  padding: 4px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--faint);
+  cursor: pointer;
+}
+.callout-close:hover {
+  background: var(--border);
+  color: var(--text);
+}
 .callout {
   background: var(--panel-solid);
   border: 1px solid var(--border);

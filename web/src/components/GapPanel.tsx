@@ -27,6 +27,7 @@ interface Props {
   hasLifeList: boolean;
   segment: Segment;
   highlighted: string | null;
+  selected: string | null;
   // Trip planner
   hotspots: RankedHotspot[];
   unattributed: number;
@@ -40,7 +41,7 @@ interface Props {
 
 /** The left floating glass panel: header, segmented filter, and the gap list / planner. */
 export function GapPanel(props: Props) {
-  const { viewMode, gaps, nearbyCount, backDays, loading, hasLifeList, segment, highlighted } = props;
+  const { viewMode, gaps, nearbyCount, backDays, loading, hasLifeList, segment, highlighted, selected } = props;
   const planner = viewMode === 'planner';
 
   const headCount = planner
@@ -133,6 +134,7 @@ export function GapPanel(props: Props) {
             gaps={gaps}
             backDays={backDays}
             highlighted={highlighted}
+            selected={selected}
             onHighlight={props.onHighlight}
             onFocus={props.onFocus}
           />

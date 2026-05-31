@@ -32,6 +32,7 @@ export function App() {
   const [hasLifeList, setHasLifeList] = useState(false);
 
   const [highlighted, setHighlighted] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>(null);
   const [focusCode, setFocusCode] = useState<string | null>(null);
 
   // Trip planner
@@ -140,12 +141,14 @@ export function App() {
   function setLatLng(newLat: number, newLng: number) {
     setLat(newLat);
     setLng(newLng);
+    setSelected(null); // markers will change; drop any pinned callout
   }
 
   function selectSegment(mode: ViewMode, s: GapSource, sc: Scope) {
     setViewMode(mode);
     setSource(s);
     setScope(sc);
+    setSelected(null);
   }
 
   const gapsToday = gaps.filter(isToday).length;
@@ -164,6 +167,8 @@ export function App() {
           mode={mode}
           highlighted={highlighted}
           onHighlight={setHighlighted}
+          selected={selected}
+          onSelect={setSelected}
           onPickLocation={setLatLng}
           focusCode={focusCode}
           viewMode={viewMode}
@@ -198,6 +203,7 @@ export function App() {
         hasLifeList={hasLifeList}
         segment={viewMode === 'planner' ? 'planner' : segmentOf(source, scope)}
         highlighted={highlighted}
+        selected={selected}
         hotspots={plan}
         unattributed={unattributed}
         highlightedHotspot={highlightedHotspot}

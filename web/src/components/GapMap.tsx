@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
+import L from 'leaflet';
 import { MapContainer, TileLayer, CircleMarker, Circle, Tooltip, useMap, useMapEvents } from 'react-leaflet';
 import type { GapSpecies, RankedHotspot } from '@gap/shared';
 import type { ViewMode } from './GapPanel.js';
@@ -17,6 +18,8 @@ interface Props {
   mode: ThemeMode;
   highlighted: string | null;
   onHighlight: (code: string | null) => void;
+  selected: string | null;
+  onSelect: (code: string | null) => void;
   onPickLocation: (lat: number, lng: number) => void;
   focusCode: string | null;
   // Trip planner
@@ -63,10 +66,24 @@ function FlyToFocus({ gaps, focusCode }: { gaps: GapSpecies[]; focusCode: string
 }
 
 /**
- * Field-guide callout anchored to the highlighted species' nearest marker.
+ * Field-guide callout anchored to a species' nearest marker. Shows the hovered
+ * species, or — when nothing is hovered — the species pinned by a marker click.
+ * A pinned callout stays put and is interactive so the eBird link is reachable.
  * Rendered via portal into the Leaflet container so it tracks pan/zoom.
  */
-function HighlightCallout({ gaps, highlighted, backDays }: { gaps: GapSpecies[]; highlighted: string | null; backDays: number }) {
+function HighlightCallout({
+  gaps,
+  highlighted,
+  selected,
+  backDays,
+  onClose,
+}: {
+  gaps: GapSpecies[];
+  highlighted: string | null;
+  selected: string | null;
+  backDays: number;
+  onClose: () => void;
+}) {
   const map = useMap();
   const [, force] = useState(0);
   useMapEvents({
@@ -75,7 +92,9 @@ function HighlightCallout({ gaps, highlighted, backDays }: { gaps: GapSpecies[];
     resize: () => force((n) => n + 1),
   });
 
-  const g = highlighted ? gaps.find((x) => x.speciesCode === highlighted) : undefined;
+  const code = highlighted ?? selected;
+  const pinned = !highlighted && !!selected;
+  const g = code ? gaps.find((x) => x.speciesCode === code) : undefined;
   if (!g) return null;
 
   const pt = map.latLngToContainerPoint([g.nearestLat, g.nearestLng]);
@@ -86,13 +105,21 @@ function HighlightCallout({ gaps, highlighted, backDays }: { gaps: GapSpecies[];
 
   return createPortal(
     <div
-      className={`callout ${right ? 'left' : 'right'}`}
+      ref={(el) => {
+        if (el) L.DomEvent.disableClickPropagation(el);
+      }}
+      className={`callout ${right ? 'left' : 'right'} ${pinned ? 'pinned' : ''}`}
       style={{ left: pt.x, top: pt.y }}
     >
       <div className="callout-head">
         <span className="callout-dot" style={{ background: color }} />
         <span className="callout-name">{g.comName}</span>
         {g.notable && <span className="badge-rare">Rare</span>}
+        {pinned && (
+          <button type="button" className="callout-close" onClick={onClose} aria-label="Close">
+            <Icons.close size={14} />
+          </button>
+        )}
       </div>
       <div className="callout-sci">{g.sciName}</div>
       <div className="callout-body">
@@ -198,7 +225,7 @@ export function GapMap(props: Props) {
       {!planner &&
         gaps.flatMap((g) =>
           g.observations.map((o, i) => {
-            const on = highlighted === g.speciesCode;
+            const on = highlighted === g.speciesCode || props.selected === g.speciesCode;
             const fill = g.notable ? c.notable : c.regular;
             return (
               <CircleMarker
@@ -214,7 +241,12 @@ export function GapMap(props: Props) {
                 eventHandlers={{
                   mouseover: () => props.onHighlight(g.speciesCode),
                   mouseout: () => props.onHighlight(null),
-                  click: () => props.onHighlight(g.speciesCode),
+                  // Pin this species: keep the callout open + reveal it in the list,
+                  // and don't let the click fall through to the map (which would relocate).
+                  click: (e) => {
+                    L.DomEvent.stopPropagation(e);
+                    props.onSelect(g.speciesCode);
+                  },
                 }}
               />
             );
@@ -250,7 +282,15 @@ export function GapMap(props: Props) {
           );
         })}
 
-      {!planner && <HighlightCallout gaps={gaps} highlighted={highlighted} backDays={backDays} />}
+      {!planner && (
+        <HighlightCallout
+          gaps={gaps}
+          highlighted={highlighted}
+          selected={props.selected}
+          backDays={backDays}
+          onClose={() => props.onSelect(null)}
+        />
+      )}
       {planner && <HotspotCallout hotspots={hotspots} highlighted={props.highlightedHotspot} />}
     </MapContainer>
   );
